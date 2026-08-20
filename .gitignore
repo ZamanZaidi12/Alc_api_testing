@@ -1,0 +1,9 @@
+# Never commit real credentials — this is the whole point of .env.example
+.env
+.env.*
+!.env.example
+
+node_modules/
+npm-debug.log*
+
+.DS_Store

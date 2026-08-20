@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>eth-api-console</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="frame">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="prompt">$</span>
+        <span class="title">eth-api-console</span>
+      </div>
+      <div id="status" class="status status--pending">checking rpc target…</div>
+    </header>
+
+    <div class="layout">
+      <nav class="rail" id="rail"></nav>
+
+      <main class="panel">
+        <section id="panel-body"></section>
+
+        <div class="output-wrap">
+          <div class="output-head">
+            <span>response</span>
+            <button id="clearBtn" class="ghost-btn">clear</button>
+          </div>
+          <pre id="output" class="output">// responses will appear here</pre>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
