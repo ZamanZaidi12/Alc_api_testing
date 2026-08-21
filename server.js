@@ -456,20 +456,33 @@ app.get('/api/tx/:hash/call-tree', asyncHandler(async (req, res) => {
 // reconstruction built entirely from data that IS free everywhere:
 //   - eth_getTransactionByHash / eth_getTransactionReceipt (top-level call,
 //     status, gas used — always free, standard JSON-RPC)
-//   - receipt logs, decoded for ERC-20/721 Transfer events (free, no extra call)
+//   - receipt logs, decoded for ERC-20/721 Transfer and WETH Deposit/Withdrawal
+//     events (free, no extra call)
 //   - Etherscan's txlistinternal filtered by txhash (free with an API key —
 //     Etherscan computes the trace server-side on their own infra and hands
 //     back just the ETH-value internal transfers)
-// This will NOT catch internal calls that move no ETH and emit no event log
-// (e.g. a bare DELEGATECALL used only for a state read) — that detail is
-// only recoverable from a real trace. Everything else — value flow, token
-// transfers, contract creations with value — comes through.
+//
+// HARD LIMIT, not a bug: this can never show a call that moves no ETH and
+// emits no event log (e.g. a bare STATICCALL/DELEGATECALL used only to read
+// state or run library logic). That information genuinely doesn't exist
+// anywhere outside the EVM's own execution trace — no amount of log
+// decoding or additional free APIs can recover it. The only way to see
+// every call is a real trace: debug_traceTransaction on a paid provider
+// tier, or your own node (e.g. your self-hosted Geth box, once reachable —
+// that gives you full traces for free, since it's not a metered API call).
 
 const ERC20_721_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+// WETH9's deposit()/withdraw() emit these instead of Transfer — wrapping/
+// unwrapping ETH is one of the most common "invisible" legs in a DeFi trace
+// (e.g. the Uniswap V4 case: raw ETH in, no Transfer event, easy to miss).
+const WETH_DEPOSIT_TOPIC = '0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c'; // Deposit(address indexed dst, uint256 wad)
+const WETH_WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'; // Withdrawal(address indexed src, uint256 wad)
 
 function decodeTransferLogs(logs) {
   return (logs || []).map((log) => {
-    if (log.topics && log.topics[0] === ERC20_721_TRANSFER_TOPIC) {
+    const topic0 = log.topics && log.topics[0];
+
+    if (topic0 === ERC20_721_TRANSFER_TOPIC) {
       const isErc721 = log.topics.length === 4; // 3 indexed args + topic0 => ERC-721
       const from = '0x' + log.topics[1].slice(26);
       const to = '0x' + log.topics[2].slice(26);
@@ -490,6 +503,25 @@ function decodeTransferLogs(logs) {
       }
       return { contract: log.address, event: 'Transfer (ERC-20)', from, to, valueBaseUnits: value, logIndex: log.logIndex };
     }
+
+    if (topic0 === WETH_DEPOSIT_TOPIC || topic0 === WETH_WITHDRAWAL_TOPIC) {
+      const isDeposit = topic0 === WETH_DEPOSIT_TOPIC;
+      const account = '0x' + log.topics[1].slice(26);
+      let value = null;
+      try {
+        value = BigInt(log.data).toString();
+      } catch {
+        /* leave null */
+      }
+      return {
+        contract: log.address,
+        event: isDeposit ? 'WETH Deposit (ETH -> WETH)' : 'WETH Withdrawal (WETH -> ETH)',
+        account,
+        valueBaseUnits: value,
+        logIndex: log.logIndex,
+      };
+    }
+
     return { contract: log.address, event: 'unknown', topics: log.topics, data: log.data, logIndex: log.logIndex };
   });
 }
